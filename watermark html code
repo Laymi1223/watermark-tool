@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>批量水印工具</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=Space+Mono:wght@700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+:root{--bg:#f5f2ee;--surface:#fff;--surface2:#f0ece6;--border:#ddd8d0;--accent:#2d5a27;--accent-light:#e8f5e3;--text:#1a1a1a;--muted:#888;--danger:#c0392b;}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:var(--bg);color:var(--text);font-family:'Noto Sans SC',sans-serif;min-height:100vh;padding:16px 14px 60px;}
+
+/* ── Lang bar: NOT fixed, sits in normal flow at top ── */
+.lang-bar{display:flex;justify-content:flex-end;margin-bottom:12px;}
+.lang-inner{display:flex;background:var(--surface);border:1.5px solid var(--border);border-radius:99px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.1);}
+/* Each lang option: real <a> styled as button — most touch-reliable */
+.lang-btn{display:flex;align-items:center;justify-content:center;width:56px;height:44px;background:transparent;color:var(--muted);font-size:0.78rem;font-weight:700;font-family:'Noto Sans SC',sans-serif;border:none;cursor:pointer;text-decoration:none;-webkit-appearance:none;}
+.lang-btn.active{background:var(--accent);color:#fff;}
+
+header{text-align:center;margin-bottom:20px;}
+header h1{font-family:'Space Mono',monospace;font-size:1.3rem;color:var(--accent);}
+header p{color:var(--muted);font-size:0.8rem;margin-top:5px;line-height:1.5;}
+
+.wrap{max-width:860px;margin:0 auto;display:flex;flex-direction:column;gap:14px;}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px;}
+.card-title{font-family:'Space Mono',monospace;font-size:0.63rem;letter-spacing:2px;text-transform:uppercase;color:var(--accent);margin-bottom:14px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
+
+.row{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;}
+.row.three{grid-template-columns:1fr 1fr 1fr;}
+.fg{display:flex;flex-direction:column;gap:5px;}
+.fg label{font-size:0.75rem;color:var(--muted);}
+input[type=text],input[type=number]{background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:10px 12px;color:var(--text);font-family:'Noto Sans SC',sans-serif;font-size:0.88rem;outline:none;width:100%;-webkit-appearance:none;}
+input[type=color]{height:42px;width:100%;border:1px solid var(--border);border-radius:7px;padding:3px 5px;background:var(--surface2);}
+.rrow{display:flex;align-items:center;gap:10px;}
+input[type=range]{flex:1;accent-color:var(--accent);}
+.rval{font-family:'Space Mono',monospace;font-size:0.8rem;color:var(--accent);min-width:30px;text-align:right;}
+
+.tog-row{display:flex;align-items:center;gap:10px;margin-bottom:14px;padding:12px 14px;background:var(--surface2);border-radius:8px;}
+.tog-label{font-size:0.88rem;font-weight:500;flex:1;}
+.tog{position:relative;width:46px;height:26px;flex-shrink:0;}
+.tog input{opacity:0;width:0;height:0;}
+.sli{position:absolute;inset:0;background:#ccc;border-radius:99px;cursor:pointer;transition:.2s;}
+.sli:before{content:'';position:absolute;width:20px;height:20px;left:3px;top:3px;background:#fff;border-radius:50%;transition:.2s;}
+.tog input:checked+.sli{background:var(--accent);}
+.tog input:checked+.sli:before{transform:translateX(20px);}
+.sec.off{opacity:.4;pointer-events:none;}
+
+.pgrid{display:grid;grid-template-columns:repeat(3,48px);gap:5px;}
+.pbtn{width:48px;height:48px;background:var(--surface2);border:1.5px solid var(--border);border-radius:7px;cursor:pointer;-webkit-appearance:none;}
+.pbtn.on{background:var(--accent);border-color:var(--accent);}
+.pholder{width:48px;height:48px;}
+
+/* ── Upload: file input DIRECTLY styled as button ──
+   This is the ONLY reliable way on iOS Safari local HTML.
+   The <input type=file> IS the button — no JS trigger needed. */
+.upload-box{border:2px dashed var(--border);border-radius:12px;padding:24px 16px;text-align:center;background:var(--surface2);}
+.upload-box h3{font-size:0.9rem;margin:8px 0 4px;}
+.upload-box p{color:var(--muted);font-size:0.76rem;margin-bottom:14px;}
+
+/* Style the file input to look like a button */
+input[type=file]{
+  display:block;
+  margin:0 auto;
+  font-family:'Noto Sans SC',sans-serif;
+  font-size:0.88rem;
+  font-weight:700;
+  color:var(--accent);
+  background:var(--surface);
+  border:2px solid var(--accent);
+  border-radius:8px;
+  padding:11px 20px;
+  cursor:pointer;
+  width:100%;
+  max-width:280px;
+}
+/* iOS shows "Choose File" or similar natively — that's fine and correct */
+
+.prev-hdr{display:flex;align-items:center;justify-content:space-between;margin:14px 0 8px;}
+.prev-hdr span{font-size:0.8rem;color:var(--muted);}
+.clr-btn{font-size:0.78rem;color:var(--danger);background:none;border:none;cursor:pointer;padding:8px;min-height:44px;}
+.pgrid2{display:grid;grid-template-columns:repeat(auto-fill,minmax(88px,1fr));gap:7px;}
+.pi{position:relative;border-radius:8px;overflow:hidden;aspect-ratio:1;background:var(--surface2);border:1px solid var(--border);}
+.pi img{width:100%;height:100%;object-fit:cover;display:block;}
+.rmbtn{position:absolute;top:3px;right:3px;background:rgba(0,0,0,.65);border:none;border-radius:50%;width:26px;height:26px;color:#fff;font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center;}
+.fn{position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.5);color:#fff;font-size:9px;padding:2px 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+
+.arow{display:flex;gap:10px;flex-wrap:wrap;}
+.btn{padding:13px 18px;border-radius:8px;border:none;font-family:'Noto Sans SC',sans-serif;font-size:0.88rem;font-weight:500;cursor:pointer;min-height:48px;-webkit-appearance:none;}
+.btn-p{background:var(--accent);color:#fff;font-weight:700;}
+.btn-p:disabled{background:#bbb;cursor:not-allowed;}
+.btn-s{background:var(--surface2);color:var(--text);border:1.5px solid var(--border);}
+.btn-s:disabled{opacity:.4;cursor:not-allowed;}
+
+.prog{display:none;margin-top:14px;}
+.pbar{height:5px;background:var(--border);border-radius:99px;overflow:hidden;}
+.pfill{height:100%;background:var(--accent);border-radius:99px;transition:width .2s;width:0%;}
+.ptxt{font-size:0.76rem;color:var(--muted);margin-top:6px;}
+
+.bdg{display:inline-flex;align-items:center;justify-content:center;background:var(--accent);color:#fff;font-family:'Space Mono',monospace;font-size:0.65rem;border-radius:99px;padding:1px 8px;min-width:20px;}
+.note{font-size:0.75rem;color:var(--muted);margin-top:10px;line-height:1.7;}
+
+.rgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px;}
+.ri{border-radius:10px;overflow:hidden;border:1px solid var(--border);background:var(--surface2);cursor:pointer;}
+.ri img{width:100%;display:block;-webkit-touch-callout:default;}
+.rname{font-size:0.7rem;color:var(--muted);padding:4px 7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:var(--surface);border-top:1px solid var(--border);}
+
+@media(max-width:520px){
+  .row{grid-template-columns:1fr;}
+  .row.three{grid-template-columns:1fr 1fr;}
+  .rgrid{grid-template-columns:repeat(auto-fill,minmax(110px,1fr));}
+}
+</style>
+</head>
+<body>
+
+<!-- Lang bar: in normal flow, NOT fixed — avoids iOS touch issues with position:fixed -->
+<div class="lang-bar">
+  <div class="lang-inner">
+    <button class="lang-btn active" id="lzh">中文</button>
+    <button class="lang-btn" id="lms">BM</button>
+    <button class="lang-btn" id="len">EN</button>
+  </div>
+</div>
+
+<header>
+  <h1>// <span id="hTitle">批量水印工具</span></h1>
+  <p id="hSub">全程在浏览器完成，照片不会上传到任何服务器</p>
+</header>
+
+<div class="wrap">
+
+  <!-- WM1 -->
+  <div class="card">
+    <div class="card-title" id="c1t">🔲 水印一 · 满屏铺满</div>
+    <div class="tog-row">
+      <span class="tog-label" id="c1tog">启用满屏水印</span>
+      <label class="tog"><input type="checkbox" id="tileOn" checked><span class="sli"></span></label>
+    </div>
+    <div class="sec" id="tileBody">
+      <div class="row">
+        <div class="fg"><label id="lTxt1">水印文字</label><input type="text" id="tileText" value="Wai Hong Brothers"></div>
+        <div class="fg"><label id="lFs1">字体大小（px）</label><div class="rrow"><input type="range" min="10" max="100" value="10" id="tileFs"><span class="rval" id="tileFsV">10</span></div></div>
+      </div>
+      <div class="row three">
+        <div class="fg"><label id="lCol1">文字颜色</label><input type="color" id="tileCol" value="#ffffff"></div>
+        <div class="fg"><label id="lOp1">透明度 %</label><div class="rrow"><input type="range" min="5" max="80" value="55" id="tileOp"><span class="rval" id="tileOpV">55</span></div></div>
+        <div class="fg"><label id="lAng">倾斜角度 °</label><div class="rrow"><input type="range" min="-60" max="0" value="-30" id="tileAng"><span class="rval" id="tileAngV">-30</span></div></div>
+      </div>
+      <div class="row">
+        <div class="fg"><label id="lSx">水平间距（px）</label><input type="number" id="tileSx" value="150" min="20" max="600"></div>
+        <div class="fg"><label id="lSy">垂直间距（px）</label><input type="number" id="tileSy" value="100" min="20" max="600"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- WM2 -->
+  <div class="card">
+    <div class="card-title" id="c2t">📌 水印二 · 指定位置文字</div>
+    <div class="tog-row">
+      <span class="tog-label" id="c2tog">启用位置水印</span>
+      <label class="tog"><input type="checkbox" id="posOn" checked><span class="sli"></span></label>
+    </div>
+    <div class="sec" id="posBody">
+      <div class="row">
+        <div class="fg"><label id="lTxt2">水印文字</label><input type="text" id="posText" value="Private and Confidential: For use exclusively by the owner, owner's company, subsidiaries, and employees. Sharing with third parties is prohibited."></div>
+        <div class="fg"><label id="lFs2">字体大小（px）</label><div class="rrow"><input type="range" min="10" max="120" value="20" id="posFs"><span class="rval" id="posFsV">20</span></div></div>
+      </div>
+      <div class="row three">
+        <div class="fg"><label id="lCol2">文字颜色</label><input type="color" id="posCol" value="#ff0000"></div>
+        <div class="fg"><label id="lOp2">透明度 %</label><div class="rrow"><input type="range" min="10" max="100" value="100" id="posOp"><span class="rval" id="posOpV">100</span></div></div>
+        <div class="fg"><label id="lMar">边距（px）</label><input type="number" id="posMar" value="24" min="0" max="200"></div>
+        <div class="fg"><label id="lMw">每行最大宽度 %</label><div class="rrow"><input type="range" min="20" max="100" value="40" id="posMw"><span class="rval" id="posMwV">40</span></div></div>
+      </div>
+      <div class="fg" style="margin-top:4px;">
+        <label id="lPos" style="margin-bottom:8px;display:block;">水印位置（点击选择）</label>
+        <div class="pgrid" id="pgrid">
+          <button class="pbtn" data-p="top-left"></button>
+          <button class="pbtn" data-p="top-center"></button>
+          <button class="pbtn" data-p="top-right"></button>
+          <button class="pbtn" data-p="mid-left"></button>
+          <div class="pholder"></div>
+          <button class="pbtn" data-p="mid-right"></button>
+          <button class="pbtn" data-p="bot-left"></button>
+          <button class="pbtn" data-p="bot-center"></button>
+          <button class="pbtn on" data-p="bot-right"></button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Upload -->
+  <div class="card">
+    <div class="card-title">📁 <span id="c3t">上传照片</span> <span class="bdg" id="cntBdg">0</span></div>
+    <div class="upload-box">
+      <div style="font-size:2rem;">🖼️</div>
+      <h3 id="upH3">选择照片</h3>
+      <p id="upP">支持 JPG、PNG、WebP，可多选</p>
+      <!--
+        KEY iOS FIX: The <input type="file"> itself is the tap target.
+        No JS .click() involved. Styled to look like a button.
+        This is the only 100% reliable method on iOS Safari local HTML.
+      -->
+      <input type="file" id="fileInput" multiple accept="image/*">
+    </div>
+
+    <div id="prevSec" style="display:none;">
+      <div class="prev-hdr">
+        <span id="prevCnt"></span>
+        <button class="clr-btn" id="clrBtn">🗑 <span id="clrTxt">清除全部</span></button>
+      </div>
+      <div class="pgrid2" id="prevGrid"></div>
+    </div>
+  </div>
+
+  <!-- Actions -->
+  <div class="card">
+    <div class="card-title" id="c4t">⬇ 处理 &amp; 下载</div>
+    <div class="arow">
+      <button class="btn btn-p" id="btnProc" disabled>✨ <span id="bpTxt">开始加水印</span></button>
+      <button class="btn btn-s" id="btnZip" disabled>📦 <span id="bzTxt">ZIP（电脑）</span></button>
+      <button class="btn btn-s" id="btnOne" disabled>📲 <span id="boTxt">逐张下载</span></button>
+    </div>
+    <p class="note" id="dlNote">先点「开始加水印」，完成后图片显示在下方。<br>🤖 Android：可用「逐张下载」自动保存，或长按图片储存。<br>🍎 iOS：只能长按图片逐张储存到相册。<br>💻 电脑：点图片单张下载、「逐张下载」自动弹出，或「ZIP」一次打包。</p>
+    <div class="prog" id="progWrap">
+      <div class="pbar"><div class="pfill" id="pFill"></div></div>
+      <div class="ptxt" id="pTxt"></div>
+    </div>
+  </div>
+
+  <!-- Results -->
+  <div class="card" id="resCard" style="display:none;">
+    <div class="card-title">🖼 <span id="c5t">处理结果</span> <span class="bdg" id="resBdg">0</span>
+      <button class="clr-btn" style="margin-left:auto;" id="clrRes">🗑</button>
+    </div>
+    <p class="note" style="margin-bottom:12px;" id="resNote">📱 长按图片保存 · 💻 点击图片下载</p>
+    <div class="rgrid" id="resGrid"></div>
+  </div>
+
+</div>
+
+<script>
+// ── i18n ─────────────────────────────────────────────
+const T={
+  zh:{
+    hTitle:'批量水印工具',hSub:'全程在浏览器完成，照片不会上传到任何服务器',
+    c1t:'🔲 水印一 · 满屏铺满（斜排重复）',c1tog:'启用满屏水印',
+    c2t:'📌 水印二 · 指定位置文字',c2tog:'启用位置水印',
+    lTxt1:'水印文字',lFs1:'字体大小（px）',lCol1:'文字颜色',lOp1:'透明度 %',lAng:'倾斜角度 °',lSx:'水平间距（px）',lSy:'垂直间距（px）',
+    lTxt2:'水印文字',lFs2:'字体大小（px）',lCol2:'文字颜色',lOp2:'透明度 %',lMar:'边距（px）',lMw:'每行最大宽度 %',lPos:'水印位置（点击选择）',
+    c3t:'上传照片',upH3:'选择照片',upP:'支持 JPG、PNG、WebP，可多选',
+    clrTxt:'清除全部',prevCnt:n=>`共 ${n} 张`,
+    c4t:'⬇ 处理 & 下载',bpTxt:'开始加水印',bzTxt:'ZIP（电脑）',boTxt:'逐张下载',
+    dlNote:'先点「开始加水印」，完成后图片显示在下方。<br>🤖 Android：可用「逐张下载」自动保存，或长按图片储存。<br>🍎 iOS：只能长按图片逐张储存到相册。<br>💻 电脑：点图片单张下载、「逐张下载」自动弹出，或「ZIP」一次打包。',
+    c5t:'处理结果',resNote:'📱 长按图片保存 · 💻 点击图片下载',
+    pp:(i,n,f)=>`处理中 ${i}/${n}：${f}`,packing:'打包中...',zipDone:'✅ ZIP 已下载！',
+    pd:(i,n,f)=>`下载中 ${i}/${n}：${f}`,done:'✅ 完成！向下滑查看图片。',
+  },
+  ms:{
+    hTitle:'Alat Tera Air Pukal',hSub:'Semua proses dalam pelayar — foto tidak dimuat naik ke mana-mana pelayan',
+    c1t:'🔲 Tera Air 1 · Penuhi Skrin',c1tog:'Aktifkan tera air penuhi skrin',
+    c2t:'📌 Tera Air 2 · Teks Kedudukan',c2tog:'Aktifkan tera air kedudukan',
+    lTxt1:'Teks tera air',lFs1:'Saiz fon (px)',lCol1:'Warna teks',lOp1:'Kelegapan %',lAng:'Sudut °',lSx:'Jarak mendatar (px)',lSy:'Jarak menegak (px)',
+    lTxt2:'Teks tera air',lFs2:'Saiz fon (px)',lCol2:'Warna teks',lOp2:'Kelegapan %',lMar:'Jidar (px)',lMw:'Lebar maks baris %',lPos:'Kedudukan (klik untuk pilih)',
+    c3t:'Muat Naik Foto',upH3:'Pilih Foto',upP:'Sokong JPG, PNG, WebP',
+    clrTxt:'Padam semua',prevCnt:n=>`Jumlah ${n} foto`,
+    c4t:'⬇ Proses & Muat Turun',bpTxt:'Tambah Tera Air',bzTxt:'ZIP (komputer)',boTxt:'Muat Turun Satu-satu',
+    dlNote:'Klik "Tambah Tera Air" dahulu. Foto siap dipaparkan di bawah.<br>🤖 Android: guna "Muat Turun Satu-satu" untuk auto simpan, atau tekan lama gambar.<br>🍎 iOS: tekan lama setiap gambar untuk simpan ke galeri.<br>💻 Komputer: klik gambar, "Satu-satu" atau ZIP.',
+    c5t:'Hasil Proses',resNote:'📱 Tekan lama untuk simpan · 💻 Klik untuk muat turun',
+    pp:(i,n,f)=>`Memproses ${i}/${n}: ${f}`,packing:'Membungkus...',zipDone:'✅ ZIP dimuat turun!',
+    pd:(i,n,f)=>`Memuat turun ${i}/${n}: ${f}`,done:'✅ Selesai! Tatal ke bawah.',
+  },
+  en:{
+    hTitle:'Bulk Watermark Tool',hSub:'Everything runs in your browser — photos never leave your device',
+    c1t:'🔲 Watermark 1 · Full-screen Tile',c1tog:'Enable full-screen watermark',
+    c2t:'📌 Watermark 2 · Fixed Position',c2tog:'Enable position watermark',
+    lTxt1:'Watermark text',lFs1:'Font size (px)',lCol1:'Text color',lOp1:'Opacity %',lAng:'Tilt angle °',lSx:'H-spacing (px)',lSy:'V-spacing (px)',
+    lTxt2:'Watermark text',lFs2:'Font size (px)',lCol2:'Text color',lOp2:'Opacity %',lMar:'Margin (px)',lMw:'Max line width %',lPos:'Position (tap to select)',
+    c3t:'Upload Photos',upH3:'Select Photos',upP:'Supports JPG, PNG, WebP — multi-select',
+    clrTxt:'Clear all',prevCnt:n=>`${n} photo${n!==1?'s':''} selected`,
+    c4t:'⬇ Process & Download',bpTxt:'Add Watermarks',bzTxt:'ZIP (desktop)',boTxt:'Download One by One',
+    dlNote:'Tap "Add Watermarks" first. Results appear below.<br>🤖 Android: use "Download One by One" to auto-save, or long-press any image.<br>🍎 iOS: long-press each image to save to your camera roll.<br>💻 Desktop: click image, one-by-one, or ZIP.',
+    c5t:'Results',resNote:'📱 Long-press to save · 💻 Click to download',
+    pp:(i,n,f)=>`Processing ${i}/${n}: ${f}`,packing:'Packaging...',zipDone:'✅ ZIP downloaded!',
+    pd:(i,n,f)=>`Downloading ${i}/${n}: ${f}`,done:'✅ Done! Scroll down to view.',
+  }
+};
+
+const IDS=['hTitle','hSub','c1t','c1tog','c2t','c2tog','lTxt1','lFs1','lCol1','lOp1','lAng','lSx','lSy','lTxt2','lFs2','lCol2','lOp2','lMar','lMw','lPos','c3t','upH3','upP','clrTxt','c4t','bpTxt','bzTxt','boTxt','dlNote','c5t','resNote'];
+
+let lang='zh';
+function setLang(l){
+  lang=l;
+  ['zh','ms','en'].forEach(x=>{
+    document.getElementById('l'+x).classList.toggle('active',x===l);
+  });
+  const t=T[l];
+  IDS.forEach(id=>{const el=document.getElementById(id);if(el)el.innerHTML=t[id]||'';});
+  const n=files.filter(Boolean).length;
+  if(n>0)document.getElementById('prevCnt').textContent=t.prevCnt(n);
+}
+
+// Lang buttons — addEventListener only
+document.getElementById('lzh').addEventListener('click',()=>setLang('zh'));
+document.getElementById('lms').addEventListener('click',()=>setLang('ms'));
+document.getElementById('len').addEventListener('click',()=>setLang('en'));
+
+// ── Files ─────────────────────────────────────────────
+const files=[], blobs=[];
+let selPos='bot-right';
+
+// File input change — direct event, no JS .click() needed
+document.getElementById('fileInput').addEventListener('change',function(){
+  Array.from(this.files).forEach(f=>{
+    if(!f.type.startsWith('image/'))return;
+    const idx=files.length;
+    files.push({file:f,url:URL.createObjectURL(f)});
+    addThumb(idx);
+  });
+  this.value='';
+  updateUI();
+});
+
+function addThumb(idx){
+  const{file,url}=files[idx];
+  const g=document.getElementById('prevGrid');
+  const w=document.createElement('div');w.className='pi';w.id='pi'+idx;
+  const img=document.createElement('img');img.src=url;img.loading='lazy';
+  const rm=document.createElement('button');rm.className='rmbtn';rm.textContent='✕';
+  rm.addEventListener('click',()=>removeFile(idx));
+  const fn=document.createElement('div');fn.className='fn';fn.textContent=file.name;
+  w.append(img,rm,fn);g.appendChild(w);
+}
+
+function removeFile(idx){
+  files[idx]=null;
+  const el=document.getElementById('pi'+idx);
+  if(el)el.remove();
+  updateUI();
+}
+
+document.getElementById('clrBtn').addEventListener('click',()=>{
+  files.length=0;
+  document.getElementById('prevGrid').innerHTML='';
+  updateUI();
+});
+
+function updateUI(){
+  const n=files.filter(Boolean).length;
+  document.getElementById('cntBdg').textContent=n;
+  document.getElementById('prevSec').style.display=n?'':'none';
+  document.getElementById('prevCnt').textContent=T[lang].prevCnt(n);
+  document.getElementById('btnProc').disabled=n===0;
+  const has=blobs.length>0;
+  document.getElementById('btnZip').disabled=!has;
+  document.getElementById('btnOne').disabled=!has;
+}
+
+// ── Position picker ───────────────────────────────────
+document.querySelectorAll('.pbtn').forEach(btn=>{
+  btn.addEventListener('click',function(){
+    selPos=this.dataset.p;
+    document.querySelectorAll('.pbtn').forEach(b=>b.classList.remove('on'));
+    this.classList.add('on');
+  });
+});
+
+// ── Toggles ───────────────────────────────────────────
+document.getElementById('tileOn').addEventListener('change',function(){
+  document.getElementById('tileBody').classList.toggle('off',!this.checked);
+});
+document.getElementById('posOn').addEventListener('change',function(){
+  document.getElementById('posBody').classList.toggle('off',!this.checked);
+});
+
+// ── Sliders ───────────────────────────────────────────
+[['tileFs','tileFsV'],['tileOp','tileOpV'],['tileAng','tileAngV'],
+ ['posFs','posFsV'],['posOp','posOpV'],['posMw','posMwV']].forEach(([r,v])=>{
+  document.getElementById(r).addEventListener('input',function(){
+    document.getElementById(v).textContent=this.value;
+  });
+});
+
+// ── Watermark ─────────────────────────────────────────
+function getS(){
+  return{
+    tile:{on:document.getElementById('tileOn').checked,text:document.getElementById('tileText').value||'Watermark',fs:+document.getElementById('tileFs').value,col:document.getElementById('tileCol').value,op:+document.getElementById('tileOp').value/100,ang:+document.getElementById('tileAng').value*Math.PI/180,sx:+document.getElementById('tileSx').value||150,sy:+document.getElementById('tileSy').value||100},
+    pos:{on:document.getElementById('posOn').checked,text:document.getElementById('posText').value||'Watermark',fs:+document.getElementById('posFs').value,col:document.getElementById('posCol').value,op:+document.getElementById('posOp').value/100,mar:+document.getElementById('posMar').value||20,mwp:+document.getElementById('posMw').value/100,pos:selPos},
+  };
+}
+
+function loadImg(file){
+  return new Promise((res,rej)=>{
+    const img=new Image();
+    img.onload=()=>res(img);img.onerror=rej;
+    img.src=URL.createObjectURL(file);
+  });
+}
+
+function stamp(img,s){
+  const c=document.createElement('canvas');
+  c.width=img.naturalWidth;c.height=img.naturalHeight;
+  const ctx=c.getContext('2d');ctx.drawImage(img,0,0);
+  const W=c.width,H=c.height;
+  if(s.tile.on&&s.tile.text){
+    ctx.save();ctx.globalAlpha=s.tile.op;ctx.fillStyle=s.tile.col;
+    ctx.font=`bold ${s.tile.fs}px sans-serif`;ctx.textBaseline='middle';
+    const tw=ctx.measureText(s.tile.text).width,sx=s.tile.sx+tw,sy=s.tile.sy+s.tile.fs,d=Math.sqrt(W*W+H*H);
+    ctx.translate(W/2,H/2);ctx.rotate(s.tile.ang);ctx.translate(-d,-d);
+    const cols=Math.ceil((d*2+W)/sx)+4,rows=Math.ceil((d*2+H)/sy)+4;
+    for(let r=0;r<rows;r++)for(let c2=0;c2<cols;c2++)ctx.fillText(s.tile.text,c2*sx,r*sy);
+    ctx.restore();
+  }
+  if(s.pos.on&&s.pos.text){
+    ctx.save();ctx.globalAlpha=s.pos.op;ctx.fillStyle=s.pos.col;
+    ctx.font=`bold ${s.pos.fs}px sans-serif`;ctx.textBaseline='top';
+    const m=s.pos.mar,maxW=W*s.pos.mwp,lh=s.pos.fs*1.4,p=s.pos.pos;
+    const words=s.pos.text.split(' '),lines=[];let cur='';
+    for(const w of words){const t=cur?cur+' '+w:w;if(ctx.measureText(t).width>maxW&&cur){lines.push(cur);cur=w;}else cur=t;}
+    if(cur)lines.push(cur);
+    const th=lines.length*lh;
+    const by=p.includes('top')?m:p.includes('bot')?H-m-th:(H-th)/2;
+    ctx.shadowColor='rgba(0,0,0,.4)';ctx.shadowBlur=4;ctx.shadowOffsetX=1;ctx.shadowOffsetY=1;
+    lines.forEach((line,i)=>{
+      const lw=ctx.measureText(line).width;
+      const lx=p.includes('left')?m:p.includes('right')?W-m-lw:(W-lw)/2;
+      ctx.fillText(line,lx,by+i*lh);
+    });
+    ctx.restore();
+  }
+  return c;
+}
+
+// ── Process ───────────────────────────────────────────
+async function doProcess(){
+  const valid=files.filter(Boolean);if(!valid.length)return;
+  const s=getS(),t=T[lang];
+  const pw=document.getElementById('progWrap'),pf=document.getElementById('pFill'),pt=document.getElementById('pTxt');
+  document.getElementById('btnProc').disabled=true;
+  pw.style.display='block';pf.style.width='0%';
+  blobs.length=0;document.getElementById('resGrid').innerHTML='';document.getElementById('resCard').style.display='none';
+  for(let i=0;i<valid.length;i++){
+    const{file}=valid[i];
+    pt.textContent=t.pp(i+1,valid.length,file.name);pf.style.width=(i/valid.length*100)+'%';
+    const img=await loadImg(file);
+    const canvas=stamp(img,s);
+    const blob=await new Promise(r=>canvas.toBlob(r,'image/jpeg',0.92));
+    const fname=file.name.replace(/\.[^.]+$/,'')+'_wm.jpg';
+    const url=URL.createObjectURL(blob);
+    blobs.push({blob,fname,url});
+    const item=document.createElement('div');item.className='ri';
+    const imgEl=document.createElement('img');imgEl.src=url;imgEl.loading='lazy';
+    imgEl.addEventListener('click',()=>dl(blob,fname));
+    const nm=document.createElement('div');nm.className='rname';nm.textContent=fname;
+    item.append(imgEl,nm);document.getElementById('resGrid').appendChild(item);
+  }
+  pf.style.width='100%';pt.textContent=t.done;
+  document.getElementById('resCard').style.display='';
+  document.getElementById('resBdg').textContent=blobs.length;
+  document.getElementById('btnZip').disabled=false;document.getElementById('btnOne').disabled=false;
+  setTimeout(()=>document.getElementById('resCard').scrollIntoView({behavior:'smooth',block:'start'}),300);
+  setTimeout(()=>{pw.style.display='none';document.getElementById('btnProc').disabled=false;},2000);
+}
+
+document.getElementById('clrRes').addEventListener('click',()=>{
+  blobs.length=0;document.getElementById('resGrid').innerHTML='';
+  document.getElementById('resCard').style.display='none';document.getElementById('resBdg').textContent='0';
+  document.getElementById('btnZip').disabled=true;document.getElementById('btnOne').disabled=true;
+});
+
+async function doZip(){
+  if(!blobs.length)return;const t=T[lang];
+  const pw=document.getElementById('progWrap'),pf=document.getElementById('pFill'),pt=document.getElementById('pTxt');
+  document.getElementById('btnZip').disabled=true;pw.style.display='block';pf.style.width='0%';pt.textContent=t.packing;
+  const zip=new JSZip();blobs.forEach(({blob,fname})=>zip.file(fname,blob));
+  const zb=await zip.generateAsync({type:'blob'},m=>{pf.style.width=m.percent+'%';});
+  dl(zb,'watermarked_'+new Date().toISOString().slice(0,10)+'.zip');
+  pt.textContent=t.zipDone;
+  setTimeout(()=>{pw.style.display='none';document.getElementById('btnZip').disabled=false;},2000);
+}
+
+async function doOne(){
+  if(!blobs.length)return;const t=T[lang];
+  const pw=document.getElementById('progWrap'),pf=document.getElementById('pFill'),pt=document.getElementById('pTxt');
+  document.getElementById('btnOne').disabled=true;pw.style.display='block';
+  for(let i=0;i<blobs.length;i++){
+    const{blob,fname}=blobs[i];
+    pt.textContent=t.pd(i+1,blobs.length,fname);pf.style.width=((i+1)/blobs.length*100)+'%';
+    dl(blob,fname);await new Promise(r=>setTimeout(r,700));
+  }
+  pt.textContent=t.zipDone;
+  setTimeout(()=>{pw.style.display='none';document.getElementById('btnOne').disabled=false;},2000);
+}
+
+function dl(blob,name){
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');a.href=url;a.download=name;
+  document.body.appendChild(a);a.click();
+  setTimeout(()=>{URL.revokeObjectURL(url);a.remove();},1000);
+}
+
+document.getElementById('btnProc').addEventListener('click',doProcess);
+document.getElementById('btnZip').addEventListener('click',doZip);
+document.getElementById('btnOne').addEventListener('click',doOne);
+</script>
+</body>
+</html>
